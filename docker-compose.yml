@@ -1,57 +1,13 @@
-x-inkmcp-common: &inkmcp-common
-  build:
-    context: .
-    args:
-      UID: ${UID:-1000}
-      GID: ${GID:-1000}
-  image: andreassag/inkmcp:latest
-  environment:
-    - DISPLAY=${DISPLAY:-:0}
-    - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
-    - XDG_RUNTIME_DIR=/tmp/runtime-ubuntu
-    - DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/dbus-session.sock
-    - GDK_BACKEND=x11
-    - PYTHONUNBUFFERED=1
-    - PYTHONPATH=/usr/share/inkscape/extensions:/home/ubuntu/.config/inkscape/extensions
-  volumes:
-    - /tmp/.X11-unix:/tmp/.X11-unix:rw
-    - inkmcp-tmp:/tmp
-    - ./workspace:/workspace:rw
-
 services:
-  inkscape:
-    <<: *inkmcp-common
-    container_name: inkmcp-gui
-    ipc: host
-    command: ["inkscape"]
-    healthcheck:
-      test: ["CMD-SHELL", "test -S /tmp/dbus-session.sock"]
-      interval: 2s
-      timeout: 2s
-      retries: 10
-      start_period: 2s
-
   mcp:
-    <<: *inkmcp-common
-    profiles: ["mcp"]
-    ipc: "service:inkscape"
-    pid: "service:inkscape"
-    depends_on:
-      inkscape:
-        condition: service_healthy
+    build:
+      context: .
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: andreassag/inkscape-mcp:latest
     stdin_open: true
     tty: false
-    command: ["mcp"]
-
-  test-dbus:
-    <<: *inkmcp-common
-    profiles: ["test", "cli"]
-    ipc: "service:inkscape"
-    pid: "service:inkscape"
-    depends_on:
-      inkscape:
-        condition: service_healthy
-    command: ["test", "circle", "cx=120 cy=120 r=50 fill=#10b981 stroke=#064e3b stroke-width=3"]
-
-volumes:
-  inkmcp-tmp:
+    volumes:
+      - ${WORKSPACE_DIR:-.}:/workspace:rw
+    command: ["--mode", "stdio"]

@@ -1,8 +1,16 @@
 variable "DOCKERHUB_REPO" {
-  default = "andreassag/inkmcp"
+  default = "andreassag/inkscape-mcp"
 }
 
 variable "GHCR_REPO" {
+  default = "ghcr.io/andreassag/inkscape-mcp"
+}
+
+variable "LEGACY_DOCKERHUB_REPO" {
+  default = "andreassag/inkmcp"
+}
+
+variable "LEGACY_GHCR_REPO" {
   default = "ghcr.io/andreassag/inkmcp"
 }
 
@@ -26,11 +34,11 @@ function "format_tags" {
 }
 
 group "default" {
-  targets = ["inkmcp"]
+  targets = ["inkscape-mcp"]
 }
 
-target "inkmcp" {
-  name = "inkmcp-ubuntu${replace(item.ubuntu, ".", "")}"
+target "inkscape-mcp" {
+  name = "inkscape-mcp-ubuntu${replace(item.ubuntu, ".", "")}"
 
   # Matrix defining versions of Ubuntu to build
   matrix = {
@@ -56,6 +64,8 @@ target "inkmcp" {
 
   tags = concat(
     format_tags(DOCKERHUB_REPO, item.ubuntu, item.latest),
-    format_tags(GHCR_REPO, item.ubuntu, item.latest)
+    format_tags(GHCR_REPO, item.ubuntu, item.latest),
+    format_tags(LEGACY_DOCKERHUB_REPO, item.ubuntu, item.latest),
+    format_tags(LEGACY_GHCR_REPO, item.ubuntu, item.latest)
   )
 }

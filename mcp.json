@@ -1,17 +1,8 @@
 {
   "mcpServers": {
     "inkscape-mcp": {
-      "command": "docker",
-      "args": [
-        "compose",
-        "-f",
-        "docker-compose.yml",
-        "run",
-        "--rm",
-        "-i",
-        "-T",
-        "mcp"
-      ]
+      "command": "uvx",
+      "args": ["inkscape-mcp"]
     }
   }
 }

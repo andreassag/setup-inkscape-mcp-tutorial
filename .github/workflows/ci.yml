@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate Configurations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate mcp.json format
+        run: |
+          python3 -m json.tool mcp.json > /dev/null
+          echo "✓ mcp.json is valid JSON"
+
+      - name: Validate docker-compose.yml configuration
+        run: |
+          docker compose config --quiet
+          echo "✓ docker-compose.yml is valid"
+
+      - name: Validate .env.example with docker-compose.yml
+        run: |
+          docker compose --env-file .env.example config --quiet
+          echo "✓ .env.example is valid and compatible with docker compose"
+
+      - name: Validate docker-bake.hcl definition
+        run: |
+          docker buildx bake --print > /dev/null
+          echo "✓ docker-bake.hcl parses successfully"
+
+      - name: Validate workflow YAML files
+        run: |
+          python3 -c "
+          import glob, yaml
+          for f in sorted(glob.glob('.github/workflows/*.yml')):
+              with open(f) as fp:
+                  yaml.safe_load(fp)
+              print(f'✓ {f} is valid YAML')
+          "
+
+  docker-test:
+    name: Build & Verify Docker Image
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Headless Docker Image
+        run: |
+          docker build -t inkscape-mcp:test .
+
+      - name: Verify Inkscape Version (1.4+)
+        run: |
+          VERSION_OUTPUT=$(docker run --rm --entrypoint inkscape inkscape-mcp:test --version)
+          echo "$VERSION_OUTPUT"
+          echo "$VERSION_OUTPUT" | grep -E "Inkscape 1\.[4-9]"
+          echo "✓ Inkscape 1.4+ confirmed"
+
+      - name: Verify Python & inkscape-mcp modules
+        run: |
+          docker run --rm --entrypoint python3 inkscape-mcp:test -c "
+          import inkscape_mcp, inkex, gi, cairo
+          print(f'✓ inkscape_mcp module verified: {inkscape_mcp.__file__}')
+          "
+
+      - name: Verify inkscape-mcp CLI Help & Options
+        run: |
+          docker run --rm inkscape-mcp:test --help
+          echo "✓ inkscape-mcp CLI help responds successfully"
+
+      - name: Verify Headless Inkscape Vector Processing
+        run: |
+          # Test headless Inkscape rendering and PNG export inside container
+          docker run --rm -v $(pwd):/workspace --entrypoint bash inkscape-mcp:test -c \
+            'echo "<svg width=\"100\" height=\"100\" xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"100\" height=\"100\" fill=\"red\"/></svg>" > /tmp/test.svg && inkscape /tmp/test.svg --export-type=png --export-filename=/tmp/test.png && test -f /tmp/test.png && echo "✓ Headless rendering passed"'

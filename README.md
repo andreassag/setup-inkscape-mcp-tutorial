@@ -1,451 +1,453 @@
-# Running Inkscape MCP via Docker Compose: Quick Setup Guide
+# Inkscape MCP Guide: Native & Headless Docker Setup
 
-A lightweight, centralized setup to run **Inkscape MCP** ([`Shriinivas/inkmcp`](https://github.com/Shriinivas/inkmcp)) as a containerized Model Context Protocol (MCP) server for AI coding assistants without cluttering host Python dependencies.
-
----
-
-## Directory Layout
-
-Store the Docker setup in a workspace-specific location (e.g., `.mcp/inkmcp` in your project root) or a centralized location on your system:
-
-### macOS / Linux
-
-- **Centralized location**: `~/.mcp/inkmcp/`
-- **Workspace-specific location**: `path/to/project/.mcp/inkmcp/`
-
-```text
-~/.mcp/inkmcp/
-├── Dockerfile          # Required only when building locally
-├── entrypoint.sh       # Required only when building locally
-├── docker-compose.yml  # Service definitions
-└── .env                # Local environment configuration (optional)
-```
-
-### Windows 11
-
-- **Centralized location**: `%USERPROFILE%\.mcp\inkmcp\` (e.g., `C:\Users\<username>\.mcp\inkmcp\`)
-- **Workspace-specific location**: `C:\path\to\project\.mcp\inkmcp\`
-
-```text
-C:\Users\<username>\.mcp\inkmcp\
-├── Dockerfile          # Required only when building locally
-├── entrypoint.sh       # Required only when building locally
-├── docker-compose.yml  # Service definitions
-└── .env                # Local environment configuration (optional)
-```
-
-> **Note**: If you are using pre-built images from Docker Hub or GitHub Container Registry, only `docker-compose.yml` (and `.env`) is required.
+A modern, comprehensive guide to running **Inkscape MCP** ([`aravindev/inkscape_mcp`](https://github.com/aravindev/inkscape_mcp)) as a Model Context Protocol (MCP) server for AI coding assistants (such as Google Antigravity, Claude Desktop, Claude Code, Cursor, Windsurf, and VS Code).
 
 ---
 
-## 1. Installation & Image Setup
+## Overview
 
-Choose one of the two approaches depending on whether you want to build the container locally from the `Dockerfile` or pull a pre-built image from a registry.
+[Inkscape MCP](https://github.com/aravindev/inkscape_mcp) connects AI coding assistants directly to Inkscape, providing **8 high-level portmanteau tools** and **over 49 vector operations**. It allows agents to manipulate vector graphics dynamically, run geometry operations, generate complex assets, inspect documents, and even drive a live interactive Inkscape GUI canvas in real time.
 
-### Option A: Building from Dockerfile (Local Build)
+### Why Migrate from Legacy Docker Setups?
 
-Use this method if you want to build or modify the container image locally.
+Previous community setups (such as `Shriinivas/inkmcp`) were **Docker-centric**, requiring an entire desktop Inkscape GUI to run inside a container. That architecture introduced significant friction:
+- **Display Server Fragility**: Required forwarding host X11, Wayland, or WSLg sockets (`/tmp/.X11-unix`), frequently failing across different OS versions and permission levels.
+- **D-Bus Complexities**: Relied on custom forks of `dbus-daemon` and shared IPC sockets across multiple linked containers.
+- **Host Permission Mappings**: Required manual matching of container `UID`/`GID` to host users to prevent permission errors on exported files.
+- **Resource Overhead**: High memory and CPU usage from virtual display drivers and duplicated X11 stacks.
 
-1. Create or place `Dockerfile`:
+### The Modern Architecture
 
-```dockerfile
-# syntax=docker/dockerfile:1
+[`aravindev/inkscape_mcp`](https://github.com/aravindev/inkscape_mcp) shifts the paradigm:
+1. **Native Support (Primary & Recommended)**: Runs directly on your host OS (**Linux**, **macOS**, and **Windows**) via Astral's [`uvx`](https://docs.astral.sh/uv/) or standard Python virtual environments. It communicates natively with your installed Inkscape 1.4+ application over system D-Bus for live GUI canvas interaction and uses direct CLI execution for headless operations—with zero container overhead.
+2. **Headless Docker Support (Secondary / CI / Isolated)**: For headless automation, CI/CD runners, batch graphic conversion, or environments without local Inkscape installations, a streamlined headless container (`ubuntu:24.04`, Inkscape 1.4+, `inkscape-mcp`) is provided. All legacy GUI/X11 socket baggage has been eliminated.
 
-ARG UBUNTU_VERSION=24.04
+```mermaid
+flowchart TD
+    subgraph Native ["Native Setup (Primary & Recommended)"]
+        A[Inkscape 1.4+ Host Binary] --> C[uvx inkscape-mcp / Python venv]
+        B[MCP Client: Antigravity / Claude / Cursor] -->|stdio JSON-RPC| C
+        C -->|D-Bus / Jeepney / MSYS2| D[Running Inkscape Canvas (Live Mode)]
+        C -->|CLI Actions / inkex| E[Headless Vector Processing]
+    end
 
-# ==============================================================================
-# Stage 1: Fetch Shriinivas/inkmcp extension files
-# ==============================================================================
-FROM ubuntu:${UBUNTU_VERSION} AS fetcher
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    unzip \
-    git \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /src
-
-RUN set -e; \
-    mkdir -p /src/extensions; \
-    if curl -fsSL https://github.com/Shriinivas/inkmcp/releases/download/v1.0.0/inkmcp-extension.zip -o inkmcp-extension.zip; then \
-        unzip -q inkmcp-extension.zip -d /src/extensions && rm inkmcp-extension.zip; \
-    else \
-        git clone --depth 1 https://github.com/Shriinivas/inkmcp.git /tmp/inkmcp-repo; \
-        cp /tmp/inkmcp-repo/inkscape_mcp.inx /tmp/inkmcp-repo/inkscape_mcp.py /src/extensions/; \
-        cp -r /tmp/inkmcp-repo/inkmcp /src/extensions/; \
-        rm -rf /tmp/inkmcp-repo; \
-    fi
-
-# ==============================================================================
-# Stage 2: Ubuntu Runtime (glibc-based to avoid musl libc crashes)
-# ==============================================================================
-FROM ubuntu:${UBUNTU_VERSION}
-
-ARG UID=1000
-ARG GID=1000
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    inkscape \
-    dbus \
-    dbus-x11 \
-    libglib2.0-bin \
-    fonts-dejavu-core \
-    fontconfig \
-    python3 \
-    python3-pip \
-    python3-venv \
-    python3-gi \
-    python3-gi-cairo \
-    python3-cairo \
-    python3-dbus \
-    python3-lxml \
-    python3-pil \
-    python3-cssselect \
-    python3-numpy \
-    python3-scour \
-    python3-packaging \
-    gir1.2-gtk-3.0 \
-    python3-dev \
-    libcairo2-dev \
-    libgirepository-2.0-dev \
-    pkg-config \
-    build-essential \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN if [ "${UID}" != "1000" ] || [ "${GID}" != "1000" ]; then \
-      groupmod -g ${GID} ubuntu 2>/dev/null || true; \
-      usermod -u ${UID} -g ${GID} ubuntu 2>/dev/null || true; \
-    fi && \
-    mkdir -p /home/ubuntu/.config/inkscape /workspace && \
-    chown -R ubuntu:ubuntu /home/ubuntu /workspace
-
-USER ubuntu
-WORKDIR /home/ubuntu
-
-ENV DBUS_SESSION_BUS_ADDRESS="unix:path=/tmp/dbus-session.sock" \
-    DISPLAY=":0" \
-    GDK_BACKEND="x11" \
-    PYTHONUNBUFFERED="1" \
-    PYTHONPATH="/usr/share/inkscape/extensions:/home/ubuntu/.config/inkscape/extensions"
-
-COPY --from=fetcher --chown=ubuntu:ubuntu /src/extensions /home/ubuntu/.config/inkscape/extensions
-
-WORKDIR /home/ubuntu/.config/inkscape/extensions/inkmcp
-RUN chmod +x *.py *.sh 2>/dev/null || true && \
-    python3 -m venv --system-site-packages venv && \
-    ./venv/bin/pip install --no-cache-dir --upgrade pip && \
-    ./venv/bin/pip install --no-cache-dir \
-      "mcp>=1.6.0,<2.0.0" \
-      "fastmcp>=2.0.0,<3.0.0" \
-      inkex \
-      cssselect
-
-COPY --chown=ubuntu:ubuntu entrypoint.sh /home/ubuntu/entrypoint.sh
-RUN chmod +x /home/ubuntu/entrypoint.sh
-
-WORKDIR /workspace
-
-ENTRYPOINT ["/home/ubuntu/entrypoint.sh"]
-CMD ["inkscape"]
+    subgraph Docker ["Headless Docker Setup (Alternative / CI)"]
+        F[MCP Client: Stdio / Docker Compose] -->|stdio JSON-RPC| G[Headless Docker Container]
+        G --> H[Inkscape 1.4 CLI & inkscape-mcp]
+        G -.->|Volume Mount| I[/workspace]
+    end
 ```
 
-2. Create or place `entrypoint.sh` (ensure it is executable with `chmod +x entrypoint.sh`):
+---
 
-```bash
-#!/usr/bin/env bash
-set -e
+## Part 1: Native Setup (Recommended)
 
-USER_HOME="${HOME:-/home/ubuntu}"
-EXT_DIR="${USER_HOME}/.config/inkscape/extensions/inkmcp"
-VENV_PYTHON="${EXT_DIR}/venv/bin/python"
+Running natively provides the best experience: instant execution, access to your system fonts, live D-Bus canvas control, and zero display socket forwarding.
 
-case "$1" in
-  mcp)
-    exec "${VENV_PYTHON}" "${EXT_DIR}/main.py"
-    ;;
-  test|cli)
-    shift
-    exec "${VENV_PYTHON}" "${EXT_DIR}/inkmcpcli.py" "$@"
-    ;;
-  inkscape|"")
-    rm -f /tmp/dbus-session.sock
-    mkdir -p /tmp/runtime-ubuntu "${USER_HOME}/.config/inkscape"
-    chmod 700 /tmp/runtime-ubuntu
+### 1. Prerequisites
 
-    if [ ! -f "${USER_HOME}/.config/inkscape/preferences.xml" ]; then
-      cat << 'EOF' > "${USER_HOME}/.config/inkscape/preferences.xml"
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<inkscape version="1.0">
-  <group id="window">
-    <group id="welcome" show="0" />
-  </group>
-</inkscape>
-EOF
-    fi
+#### A. Install Inkscape 1.4+
 
-    dbus-daemon --session --address="unix:path=/tmp/dbus-session.sock" --fork
-
-    echo "[inkmcp] Session D-Bus daemon started at $DBUS_SESSION_BUS_ADDRESS"
-    echo "[inkmcp] Starting Inkscape GUI on DISPLAY=${DISPLAY:-:0}..."
-
-    if [ "$1" = "inkscape" ]; then
-      shift
-    fi
-    exec inkscape "$@"
-    ;;
-  *)
-    exec "$@"
-    ;;
-esac
-```
-
-3. Build the image locally:
-
-- **Using Docker CLI**:
-  - **macOS / Linux**:
-    ```bash
-    docker build -t inkmcp:latest ~/.mcp/inkmcp
-    ```
-  - **Windows 11**:
-    ```powershell
-    docker build -t inkmcp:latest "$HOME\.mcp\inkmcp"
-    ```
-
-- **Using Docker Compose**:
+- **Ubuntu / Debian**:
   ```bash
-  docker compose -f ~/.mcp/inkmcp/docker-compose.yml build
+  sudo add-apt-repository ppa:inkscape.dev/stable
+  sudo apt update
+  sudo apt install inkscape libcairo2-dev libgirepository-2.0-dev libgirepository1.0-dev \
+    pkg-config python3-dev xclip wl-clipboard
+  ```
+  *(Note: `wl-clipboard` and `xclip` handle clipboard staging for live SVG insertion into the canvas; the server auto-detects Wayland vs X11).*
+
+- **Fedora**:
+  ```bash
+  sudo dnf install inkscape cairo-devel gobject-introspection-devel pkgconf-pkg-config \
+    python3-devel wl-clipboard xclip
   ```
 
-*(Note: When using a locally built image, ensure `image: andreassag/inkmcp:latest` or `inkmcp:latest` in `docker-compose.yml` matches your local tag).*
+- **Arch Linux**:
+  ```bash
+  sudo pacman -S inkscape cairo gobject-introspection pkgconf python wl-clipboard xclip
+  ```
 
-### Option B: Pulling Pre-built Image from Registry
+- **macOS**:
+  ```bash
+  brew install --cask inkscape
+  ```
+  *Ensure the Inkscape CLI is reachable on your PATH, or set `INKSCAPE_BIN="/Applications/Inkscape.app/Contents/MacOS/inkscape"`.*
 
-Use this method if you want to use pre-built images without maintaining a local `Dockerfile`.
+- **Windows 11 / 10**:
+  Install Inkscape via winget or official installer:
+  ```powershell
+  winget install Inkscape.Inkscape
+  ```
+  *For Live GUI Mode on Windows*: A D-Bus daemon is required for live canvas bridge communication. The easiest installation method is via [MSYS2](https://www.msys2.org/):
+  ```sh
+  pacman -S mingw-w64-x86_64-dbus
+  ```
+  The MCP server will auto-discover `dbus-daemon.exe`.
 
-Pre-built images are published to Docker Hub and GitHub Container Registry (GHCR):
-- **Docker Hub**: `andreassag/inkmcp:latest` (or tagged versions like `andreassag/inkmcp:ubuntu24.04`)
-- **GitHub Container Registry (GHCR)**: `ghcr.io/andreassag/inkmcp:latest`
+#### B. Install Astral `uv` (or Python 3.12+)
 
-Pull the image:
+Astral's [`uv`](https://docs.astral.sh/uv/) provides the fastest, most reliable execution via `uvx`:
 
-```bash
-# Pull from Docker Hub
-docker pull andreassag/inkmcp:latest
+- **Linux / macOS**:
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
 
-# Pull from GitHub Container Registry
-docker pull ghcr.io/andreassag/inkmcp:latest
-```
-
-When pulling from a registry, you only need `docker-compose.yml` and your `.env` configuration.
+- **Windows**:
+  ```powershell
+  winget install astral-sh.uv
+  ```
 
 ---
 
-## 2. Docker Compose Configuration
+### 2. Quickstart Test
 
-Create `docker-compose.yml`:
-
-```yaml
-x-inkmcp-common: &inkmcp-common
-  build:
-    context: .
-    args:
-      UID: ${UID:-1000}
-      GID: ${GID:-1000}
-  image: andreassag/inkmcp:latest
-  environment:
-    - DISPLAY=${DISPLAY:-:0}
-    - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
-    - XDG_RUNTIME_DIR=/tmp/runtime-ubuntu
-    - DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/dbus-session.sock
-    - GDK_BACKEND=x11
-    - PYTHONUNBUFFERED=1
-    - PYTHONPATH=/usr/share/inkscape/extensions:/home/ubuntu/.config/inkscape/extensions
-  volumes:
-    - /tmp/.X11-unix:/tmp/.X11-unix:rw
-    - inkmcp-tmp:/tmp
-    - ./workspace:/workspace:rw
-
-services:
-  inkscape:
-    <<: *inkmcp-common
-    container_name: inkmcp-gui
-    ipc: host
-    command: ["inkscape"]
-    healthcheck:
-      test: ["CMD-SHELL", "test -S /tmp/dbus-session.sock"]
-      interval: 2s
-      timeout: 2s
-      retries: 10
-      start_period: 2s
-
-  mcp:
-    <<: *inkmcp-common
-    profiles: ["mcp"]
-    ipc: "service:inkscape"
-    pid: "service:inkscape"
-    depends_on:
-      inkscape:
-        condition: service_healthy
-    stdin_open: true
-    tty: false
-    command: ["mcp"]
-
-  test-dbus:
-    <<: *inkmcp-common
-    profiles: ["test", "cli"]
-    ipc: "service:inkscape"
-    pid: "service:inkscape"
-    depends_on:
-      inkscape:
-        condition: service_healthy
-    command: ["test", "circle", "cx=120 cy=120 r=50 fill=#10b981 stroke=#064e3b stroke-width=3"]
-
-volumes:
-  inkmcp-tmp:
-```
-
-### Environment Configuration (`.env`)
-
-Docker Compose automatically loads variables from a `.env` file located in the same directory as `docker-compose.yml`.
-
-Create a `.env` file in the same directory as `docker-compose.yml` (e.g., `~/.mcp/inkmcp/.env` or `C:\Users\<username>\.mcp\inkmcp\.env`):
+Run `inkscape-mcp` on demand using `uvx` (no permanent venv installation required):
 
 ```bash
-DISPLAY=:0
-WAYLAND_DISPLAY=wayland-0
-UID=1000
-GID=1000
+uvx inkscape-mcp --help
+```
+
+You should see the FastMCP options and help output.
+
+Alternatively, install into a dedicated virtual environment:
+```bash
+python3 -m venv ~/.venvs/inkscape_mcp
+~/.venvs/inkscape_mcp/bin/pip install inkscape-mcp
+~/.venvs/inkscape_mcp/bin/inkscape-mcp --help
 ```
 
 ---
 
-## 3. Starting Inkscape & Testing Connection
+### 3. MCP Client Configuration
 
-Start the Inkscape GUI container in the background:
+Add `inkscape-mcp` to your preferred AI coding assistant or client:
 
-### macOS / Linux / WSL2
+#### Google Antigravity
 
-```bash
-docker compose -f ~/.mcp/inkmcp/docker-compose.yml up -d
-```
-
-### Windows 11
-
-```powershell
-docker compose -f "$HOME\.mcp\inkmcp\docker-compose.yml" up -d
-```
-
-Inkscape will open on your desktop (via WSLg on Windows 10/11 or native X11/Wayland on Linux) with an active blank canvas ready to receive commands.
-
-> **Tip**: Closing the Inkscape window exits the container and leaves it stopped. To reopen Inkscape, run `docker compose up -d` again.
-
-### Test D-Bus Communication
-
-Verify that commands can be dispatched to the active Inkscape canvas over D-Bus:
-
-```bash
-docker compose -f ~/.mcp/inkmcp/docker-compose.yml run --rm test-dbus
-```
-
-A green circle (`cx=120 cy=120 r=50`) will immediately appear on the active Inkscape canvas.
-
-You can also pass custom shape commands directly:
-
-```bash
-docker compose -f ~/.mcp/inkmcp/docker-compose.yml run --rm test-dbus rect "x=50 y=50 width=180 height=100 fill=#3b82f6"
-```
-
----
-
-## 4. MCP Client Configuration
-
-### Base Configuration (`mcp.json`)
-
-Most MCP-compatible clients use an `mcpServers` object in their configuration file. Below is the base definition:
+- **Global Config**: `~/.gemini/config/mcp_config.json`
+- **Project-Level Config**: `.agents/mcp_config.json`
 
 ```json
 {
-    "mcpServers": {
-        "inkscape-mcp": {
-            "command": "docker",
-            "args": [
-                "compose",
-                "-f",
-                "/home/<user>/.mcp/inkmcp/docker-compose.yml",
-                "run",
-                "--rm",
-                "-i",
-                "-T",
-                "mcp"
-            ]
-        }
+  "mcpServers": {
+    "inkscape-mcp": {
+      "command": "uvx",
+      "args": ["inkscape-mcp"]
     }
+  }
 }
 ```
 
-> **Windows 11 / WSL2 Host Note**: When running the AI client directly on Windows, route the command through `wsl.exe`:
-> ```json
-> {
->     "mcpServers": {
->         "inkscape-mcp": {
->             "command": "wsl.exe",
->             "args": [
->                 "-d", "Ubuntu", "--",
->                 "docker", "compose",
->                 "-f", "/home/<user>/.mcp/inkmcp/docker-compose.yml",
->                 "run", "--rm", "-i", "-T", "mcp"
->             ]
->         }
->     }
-> }
-> ```
+#### Claude Desktop
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "inkscape-mcp": {
+      "command": "uvx",
+      "args": ["inkscape-mcp"]
+    }
+  }
+}
+```
+
+*(If using a dedicated Python venv rather than `uvx`, replace `"command": "uvx"` and `"args": ["inkscape-mcp"]` with `"command": "/path/to/venv/bin/inkscape-mcp"` and `"args": []`)*.
+
+#### Claude Code CLI
+
+Register in one command:
+```bash
+claude mcp add inkscape_mcp -s user -- uvx inkscape_mcp
+claude mcp list | grep inkscape_mcp   # Verifies: ✓ Connected
+```
+
+#### Cursor / Windsurf / VS Code
+
+In your assistant's MCP configuration settings:
+```json
+{
+  "mcpServers": {
+    "inkscape-mcp": {
+      "command": "uvx",
+      "args": ["inkscape-mcp"]
+    }
+  }
+}
+```
 
 ---
 
-### Client Configuration Locations
+### 4. Modes of Operation
 
-Add the base `inkscape-mcp` entry to the corresponding client configuration file or use the CLI command:
+1. **Live GUI Mode (`inkscape_live`)**:
+   - Keep Inkscape open on your desktop with your artwork canvas.
+   - The AI agent communicates with the live window over D-Bus.
+   - The agent can inspect your current selection (`get_selection`), paste geometric shapes in place (`insert_svg`), mutate XML attributes (`edit_xml`), execute actions (`apply_action`), and rasterize the canvas into an image to visually inspect its work.
+   - Every operation creates a standard Inkscape undo entry (`Ctrl+Z`), preserving full human control.
 
-| Client | Scope / Platform | Configuration Path / CLI Command |
+2. **Headless CLI Mode (`inkscape_file`, `inkscape_vector`, `inkscape_analysis`)**:
+   - Executes headlessly using Inkscape's command-line verbs and Inkex scripts.
+   - Ideal for generating SVG files from scratch, running boolean operations (`apply_boolean`), converting formats (`SVG -> PDF/PNG/DXF`), simplifying paths, and optimizing files (`scour_svg`).
+   - Does not require a graphical window to be open.
+
+---
+
+## Part 2: Headless Docker Setup (Alternative / CI / Isolated)
+
+When should you use Docker?
+- Running on headless Linux servers or CI/CD pipelines without a desktop environment.
+- Environments where installing Inkscape 1.4+ or Python 3.12+ locally is restricted or inconvenient.
+- Isolated batch operations where vector assets are mounted into a container.
+
+> **Note**: The Docker container is strictly **headless**. It communicates using MCP JSON-RPC over `stdio` and does not forward X11 or Wayland displays.
+
+### 1. Using Pre-Built Images
+
+Pre-built multi-arch images (`linux/amd64` and `linux/arm64`) are published to both GitHub Container Registry and Docker Hub:
+- `ghcr.io/andreassag/inkscape-mcp:latest`
+- `andreassag/inkscape-mcp:latest`
+
+Run ad-hoc:
+```bash
+docker run -i --rm -v $(pwd):/workspace ghcr.io/andreassag/inkscape-mcp:latest --help
+```
+
+### 2. Using Docker Compose
+
+The repository includes a simplified `docker-compose.yml`:
+
+```yaml
+services:
+  mcp:
+    build:
+      context: .
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: andreassag/inkscape-mcp:latest
+    stdin_open: true
+    tty: false
+    volumes:
+      - ${WORKSPACE_DIR:-.}:/workspace:rw
+    command: ["--mode", "stdio"]
+```
+
+#### Environment Variables (`.env`)
+
+Copy `.env.example` to `.env`:
+```bash
+cp .env.example .env
+```
+
+```bash
+# User and Group ID matching host permissions
+UID=1000
+GID=1000
+
+# Directory mounted to /workspace inside container
+WORKSPACE_DIR=.
+```
+
+### 3. MCP Client Configuration for Docker
+
+To run the headless Docker container from your MCP client, configure stdio execution:
+
+```json
+{
+  "mcpServers": {
+    "inkscape-mcp": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "/path/to/setup-inkscape-mcp-tutorial/docker-compose.yml",
+        "run",
+        "--rm",
+        "-i",
+        "-T",
+        "mcp"
+      ]
+    }
+  }
+}
+```
+
+*Crucial flag*: `-T` disables pseudo-TTY allocation in Docker, preventing escape characters and carriage returns from corrupting the JSON-RPC communication stream.
+
+---
+
+## Part 3: Tool Reference & Examples
+
+`inkscape-mcp` organizes functionality into 8 portmanteau tools. Each tool accepts an `operation` parameter:
+
+| Tool | Operations | Purpose |
 | :--- | :--- | :--- |
-| **Google Antigravity** | Global | `~/.gemini/config/mcp_config.json` |
-| | Workspace | `.agents/mcp_config.json` (repository root) |
-| **Claude Desktop** | macOS / Linux | `~/.config/Claude/claude_desktop_config.json` |
-| | Windows 11 | `%APPDATA%\Claude\claude_desktop_config.json` |
-| **Claude Code** | CLI | `claude mcp add inkscape-mcp -- docker compose -f /home/<user>/.mcp/inkmcp/docker-compose.yml run --rm -i -T mcp` |
-| **OpenAI Codex** | Global | `~/.codex/config.json` |
-| | Workspace | `.codex/config.json` (repository root) |
-| | CLI | `codex mcp add inkscape-mcp -- docker compose -f /home/<user>/.mcp/inkmcp/docker-compose.yml run --rm -i -T mcp` |
+| **`inkscape_file`** | `load`, `save`, `convert`, `info`, `validate`, `list_formats`, `batch_convert` | Load, export, validate, and batch-convert vector documents. |
+| **`inkscape_vector`** | `apply_boolean`, `align`, `distribute`, `trace_image`, `scour_svg`, `optimize_svg`, `measure_object`, `generate_barcode_qr`, `lpe_add_corners`, `tile_clone`, +39 more | Comprehensive geometric and vector operations. |
+| **`inkscape_analysis`** | `quality`, `statistics`, `validate`, `objects`, `dimensions`, `structure` | Inspect SVG object hierarchy, calculate dimensions, compute quality score. |
+| **`inkscape_system`** | `status`, `help`, `diagnostics`, `version`, `config`, `list_extensions`, `execute_extension` | Query server health, verify binary paths, inspect configuration provenance. |
+| **`inkscape_extension`** | `list`, `describe`, `run`, `run_live` | Discover and invoke bundled Inkscape/Inkex Python extensions. |
+| **`inkscape_gradient`** | `add_stop`, `remove_stop`, `set_stop_color`, `convert_to_linear`, `convert_to_radial`, `list_stops` | Manipulate linear and radial color stops and transitions. |
+| **`inkscape_metadata`** | `get`, `set_title`, `set_creator`, `set_description`, `set_rights`, `set_keywords` | Read and write Dublin-Core RDF metadata embedded in the SVG. |
+| **`inkscape_live`** | `ping`, `get_selection`, `set_selection`, `apply_action`, `insert_svg`, `edit_xml`, `rasterize`, `inspect_element` | Control live open Inkscape window over D-Bus with visual feedback. |
 
 ---
 
-## 5. Docker Compose Services Reference
+### Practical Prompting Recipes
 
-| Service | Profile | Purpose | Command Example |
-| :--- | :--- | :--- | :--- |
-| `inkscape` | *(default)* | Runs D-Bus session broker and persistent Inkscape GUI | `docker compose up -d` |
-| `mcp` | `mcp` | Runs the FastMCP `stdio` server connected to Inkscape | `docker compose run --rm -i -T mcp` |
-| `test-dbus` | `test`, `cli` | Runs `inkmcpcli.py` to issue direct commands over D-Bus | `docker compose run --rm test-dbus` |
+#### 1. Procedural Vector Design (Constructing Without Hardcoded SVG)
+> *"Design a modern hexagonal tech badge in this document. Create a regular hexagon, center an icon path inside it, align them horizontally and vertically, and subtract an inner shape using boolean difference."*
+
+The agent uses:
+- `inkscape_vector` (`operation="construct_svg"`) or primitive placement.
+- `inkscape_vector` (`operation="align"`, `operation_type="hcenter vcenter"`).
+- `inkscape_vector` (`operation="apply_boolean"`, `operation_type="difference"`).
+
+#### 2. Visual Iteration with Live Canvas Feedback
+> *"Look at my open Inkscape canvas, tell me what looks unbalanced, recolor the accent palette to warm amber, and show me the resulting render."*
+
+The agent uses:
+- `inkscape_live` (`operation="get_selection"` / `inspect_element`).
+- `inkscape_live` (`operation="apply_action"`, `action="select-by-color"` or XML edit).
+- `inkscape_live` (`operation="rasterize"`) to render a temporary PNG and visually verify its output.
+
+#### 3. Asset Minification & Scour
+> *"Sanitize and minify `icon.svg` for web production. Strip unnecessary namespaces, round decimal points, and preserve element IDs."*
+
+The agent uses:
+- `inkscape_vector` (`operation="scour_svg"`, `input_path="icon.svg"`).
+
+#### 4. Batch Exporting for Print & Web
+> *"Convert all SVGs in `./assets` into 300 DPI print-ready PDFs and 2x resolution PNGs."*
+
+The agent uses:
+- `inkscape_file` (`operation="batch_convert"`, `format="pdf"`).
+- `inkscape_file` (`operation="batch_convert"`, `format="png"`).
 
 ---
 
-## 6. Troubleshooting
+## Part 4: Troubleshooting & Diagnostics
 
-| Symptom | Root Cause | Solution |
-| :--- | :--- | :--- |
-| Inkscape GUI window does not appear | WSLg X11 socket not forwarded or permissions mismatch. | Check that `/tmp/.X11-unix` exists in WSL2. Verify `DISPLAY=:0` in `.env`. |
-| Black or blank canvas on older WSLg builds | Wayland buffer composition quirk. | The container sets `GDK_BACKEND=x11` by default to enforce reliable XWayland rendering. |
-| `JSON-RPC parsing error` | Docker allocated a pseudo-TTY (`tty: true` or missing `-T` flag). | Ensure `-T` is included in `docker compose run` args to disable TTY formatting on `stdio`. |
+### Run Server Diagnostics
+
+If an operation fails or you suspect Inkscape is not being detected properly, instruct your agent to run diagnostics or inspect it via CLI:
+
+```bash
+uvx inkscape-mcp --mode stdio
+```
+
+Inside the client:
+```json
+{
+  "name": "inkscape_system",
+  "arguments": {
+    "operation": "diagnostics"
+  }
+}
+```
+
+The output returns:
+- Detected Inkscape binary path and version.
+- Provenance of settings (`cli_flag`, `env_var`, `config_file`, `auto_detected`, or `default`).
+- D-Bus connection status.
+- Extension directory state.
+
+### Explicit Binary Path Override
+
+If Inkscape is installed in a custom location, set the `INKSCAPE_BIN` environment variable:
+
+```bash
+export INKSCAPE_BIN="/custom/path/to/inkscape"
+```
+
+In client config:
+```json
+{
+  "mcpServers": {
+    "inkscape-mcp": {
+      "command": "uvx",
+      "args": ["inkscape-mcp"],
+      "env": {
+        "INKSCAPE_BIN": "/custom/path/to/inkscape"
+      }
+    }
+  }
+}
+```
+
+### Windows MSYS2 D-Bus Configuration
+
+If Live Mode cannot establish a connection on Windows:
+1. Ensure MSYS2's `dbus-daemon.exe` is installed (`pacman -S mingw-w64-x86_64-dbus`).
+2. If installed in a non-standard path, set:
+   ```powershell
+   [System.Environment]::SetEnvironmentVariable("INKSCAPE_MCP_DBUS_DAEMON", "C:\msys64\mingw64\bin\dbus-daemon.exe", "User")
+   ```
+3. Note: On Windows, Live Mode automatically launches and manages its own Inkscape instance when calling `open_file`.
 
 ---
 
-## License
+## Part 5: CI/CD Pipeline & Local Testing
 
-This project is dedicated to the public domain under the [Unlicense](LICENSE).
+This repository includes continuous integration workflows in `.github/workflows/`:
+- **`ci.yml`**: Validates configuration syntax (`mcp.json`, `docker-compose.yml`, `docker-bake.hcl`, `.env.example`, workflow YAMLs), builds the headless Docker image, and executes verification tests against Inkscape (1.4+), python module imports, CLI flags, and headless SVG vector rendering.
+- **`docker-publish.yml`**: Builds and publishes multi-architecture images to Docker Hub and GHCR on releases and updates to `main`.
+
+### Testing Locally with `gh act` (or `act`)
+
+To preserve GitHub Actions minutes and verify CI changes before pushing, you can execute the pipeline locally using [`gh act`](https://github.com/nektos/gh-act) (the GitHub CLI extension) or standalone [`act`](https://github.com/nektos/act):
+
+#### 1. Installation
+
+- **Using GitHub CLI extension (`gh act`)**:
+  ```bash
+  gh extension install nektos/gh-act
+  ```
+
+- **Using standalone `act`**:
+  ```bash
+  # Linux / macOS (Homebrew)
+  brew install act
+
+  # Linux (curl)
+  curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+
+  # Windows (Winget / Chocolatey)
+  winget install nektos.act
+  # or: choco install act-cli
+  ```
+
+#### 2. Running Local CI Jobs
+
+```bash
+# Validate configurations, bake targets, and workflow schemas (fast, no Docker daemon required):
+gh act -j validate
+# Or with standalone act:
+act -j validate
+
+# Build Docker image and run containerized vector processing verification:
+gh act -j docker-test
+# Or with standalone act:
+act -j docker-test
+
+# Run entire CI workflow:
+gh act
+# Or with standalone act:
+act
+```
+
+---
+
+## License & Credits
+
+- This tutorial repository and configuration files are dedicated to the public domain under the [Unlicense](LICENSE).
+- **`inkscape_mcp`** is created by [Aravind EV](https://github.com/aravindev) and licensed under the [MIT License](https://github.com/aravindev/inkscape_mcp/blob/main/LICENSE).
+- Upstream project and issue tracker: [https://github.com/aravindev/inkscape_mcp](https://github.com/aravindev/inkscape_mcp).
+- PyPI package: [`inkscape-mcp`](https://pypi.org/project/inkscape-mcp/).
+- Maintained by [Andreas Sag](https://github.com/andreassag).
