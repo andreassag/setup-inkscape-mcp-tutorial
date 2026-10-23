@@ -8,6 +8,14 @@ import asyncio
 import os
 import sys
 
+# Ensure UTF-8 output across all operating systems and consoles
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 
 def main() -> int:
     print("=== Testing inkscape_mcp installation and headless operation ===")
@@ -17,9 +25,9 @@ def main() -> int:
         import inkscape_mcp
         from inkscape_mcp.main import InkscapeMCPServer
 
-        print(f"✓ Successfully imported inkscape_mcp from: {inkscape_mcp.__file__}")
+        print(f"[OK] Successfully imported inkscape_mcp from: {inkscape_mcp.__file__}")
     except ImportError as e:
-        print(f"✗ Failed to import inkscape_mcp: {e}", file=sys.stderr)
+        print(f"[FAIL] Failed to import inkscape_mcp: {e}", file=sys.stderr)
         return 1
 
     # 2. Test server initialization and Inkscape detection
@@ -27,16 +35,16 @@ def main() -> int:
     server = InkscapeMCPServer()
     init_ok = asyncio.run(server.initialize())
     if not init_ok:
-        print("✗ Server initialization returned False", file=sys.stderr)
+        print("[FAIL] Server initialization returned False", file=sys.stderr)
         return 1
-    print("✓ Server initialized successfully")
+    print("[OK] Server initialized successfully")
 
     inkscape_bin = server.config.inkscape_executable
     print(f"Detected Inkscape binary: {inkscape_bin}")
     if not inkscape_bin or not server.cli_wrapper:
-        print("✗ Inkscape binary not detected or CLI wrapper not available", file=sys.stderr)
+        print("[FAIL] Inkscape binary not detected or CLI wrapper not available", file=sys.stderr)
         return 1
-    print("✓ Inkscape CLI wrapper active")
+    print("[OK] Inkscape CLI wrapper active")
 
     # 3. Test headless vector export
     print("\n--- Testing headless vector export ---")
@@ -61,12 +69,12 @@ def main() -> int:
             )
         )
         if not os.path.exists(test_png) or os.path.getsize(test_png) == 0:
-            print(f"✗ Exported PNG does not exist or is empty: {test_png}", file=sys.stderr)
+            print(f"[FAIL] Exported PNG does not exist or is empty: {test_png}", file=sys.stderr)
             return 1
 
-        print(f"✓ Headless export verified: {out_path} ({os.path.getsize(test_png)} bytes)")
+        print(f"[OK] Headless export verified: {out_path} ({os.path.getsize(test_png)} bytes)")
     except Exception as e:
-        print(f"✗ Headless export failed: {e}", file=sys.stderr)
+        print(f"[FAIL] Headless export failed: {e}", file=sys.stderr)
         return 1
     finally:
         for f in (test_svg, test_png):
@@ -76,7 +84,7 @@ def main() -> int:
                 except OSError:
                     pass
 
-    print("\n✓ All headless smoke tests passed successfully!")
+    print("\n[OK] All headless smoke tests passed successfully!")
     return 0
 
 
