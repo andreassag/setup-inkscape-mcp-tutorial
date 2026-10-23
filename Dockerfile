@@ -1,11 +1,13 @@
 # syntax=docker/dockerfile:1
 
 ARG UBUNTU_VERSION=24.04
+ARG MCP_VERSION=1.3.1
 
 FROM ubuntu:${UBUNTU_VERSION}
 
 ARG UID=1000
 ARG GID=1000
+ARG MCP_VERSION=1.3.1
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -44,7 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create virtual environment with system site-packages and install inkscape-mcp from PyPI
 RUN python3 -m venv --system-site-packages /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /opt/venv/bin/pip install --no-cache-dir inkscape-mcp
+    /opt/venv/bin/pip install --no-cache-dir "inkscape-mcp==${MCP_VERSION}"
 
 # Setup workspace directory and ensure proper user mapping
 RUN if [ "${UID}" != "1000" ] || [ "${GID}" != "1000" ]; then \

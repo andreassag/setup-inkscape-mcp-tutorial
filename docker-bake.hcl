@@ -1,3 +1,7 @@
+variable "MCP_VERSION" {
+  default = "1.3.1"
+}
+
 variable "DOCKERHUB_REPO" {
   default = "andreassag/inkscape-mcp"
 }
@@ -20,10 +24,13 @@ function "major" {
   result = split(".", ver)[0]
 }
 
-# Formats tags for a given registry repository
+# Formats tags for a given registry repository including MCP release version alongside Ubuntu version
 function "format_tags" {
-  params = [repo, ubuntu, is_latest]
+  params = [repo, ubuntu, mcp_version, is_latest]
   result = concat(
+    ["${repo}:v${mcp_version}-ubuntu${ubuntu}"],
+    ["${repo}:v${mcp_version}-ubuntu${major(ubuntu)}"],
+    ["${repo}:v${mcp_version}"],
     ["${repo}:ubuntu${ubuntu}"],
     ["${repo}:ubuntu${major(ubuntu)}"],
     ["${repo}:ubuntu"],
@@ -55,6 +62,7 @@ target "inkscape-mcp" {
 
   args = {
     UBUNTU_VERSION = item.ubuntu
+    MCP_VERSION    = MCP_VERSION
   }
 
   platforms = [
@@ -63,9 +71,9 @@ target "inkscape-mcp" {
   ]
 
   tags = concat(
-    format_tags(DOCKERHUB_REPO, item.ubuntu, item.latest),
-    format_tags(GHCR_REPO, item.ubuntu, item.latest),
-    format_tags(LEGACY_DOCKERHUB_REPO, item.ubuntu, item.latest),
-    format_tags(LEGACY_GHCR_REPO, item.ubuntu, item.latest)
+    format_tags(DOCKERHUB_REPO, item.ubuntu, MCP_VERSION, item.latest),
+    format_tags(GHCR_REPO, item.ubuntu, MCP_VERSION, item.latest),
+    format_tags(LEGACY_DOCKERHUB_REPO, item.ubuntu, MCP_VERSION, item.latest),
+    format_tags(LEGACY_GHCR_REPO, item.ubuntu, MCP_VERSION, item.latest)
   )
 }

@@ -209,9 +209,11 @@ When should you use Docker?
 
 ### 1. Using Pre-Built Images
 
-Pre-built multi-arch images (`linux/amd64` and `linux/arm64`) are published to both GitHub Container Registry and Docker Hub:
-- `ghcr.io/andreassag/inkscape-mcp:latest`
-- `andreassag/inkscape-mcp:latest`
+Pre-built multi-arch images (`linux/amd64` and `linux/arm64`) are published to both GitHub Container Registry and Docker Hub, tagged with the MCP release version alongside the Ubuntu base image version:
+- **Docker Hub**:
+  - `andreassag/inkscape-mcp:v1.3.1-ubuntu24.04` (or `:v1.3.1`, `:latest`)
+- **GitHub Container Registry (GHCR)**:
+  - `ghcr.io/andreassag/inkscape-mcp:v1.3.1-ubuntu24.04` (or `:v1.3.1`, `:latest`)
 
 Run ad-hoc:
 ```bash
@@ -396,8 +398,14 @@ If Live Mode cannot establish a connection on Windows:
 ## Part 5: CI/CD Pipeline & Local Testing
 
 This repository includes continuous integration workflows in `.github/workflows/`:
-- **`ci.yml`**: Validates configuration syntax (`mcp.json`, `docker-compose.yml`, `docker-bake.hcl`, `.env.example`, workflow YAMLs), builds the headless Docker image, and executes verification tests against Inkscape (1.4+), python module imports, CLI flags, and headless SVG vector rendering.
-- **`docker-publish.yml`**: Builds and publishes multi-architecture images to Docker Hub and GHCR on releases and updates to `main`.
+- **`ci.yml`**:
+  - **`validate`**: Validates configuration syntax (`mcp.json`, `docker-compose.yml`, `docker-bake.hcl`, `.env.example`, workflow YAMLs).
+  - **`docker-test`**: Builds the headless Docker image and executes verification tests against Inkscape (1.4+), python module imports, CLI flags, and headless SVG vector rendering.
+  - **`native-test`**: Multi-OS matrix test across **Ubuntu**, **macOS**, and **Windows** verifying:
+    - Native Inkscape installation (apt/PPA on Linux, Homebrew on macOS, Chocolatey on Windows).
+    - `inkscape-mcp` installation via `pip` and execution via `uvx`.
+    - Headless execution and MCP server initialization via [`scripts/test_headless_smoke.py`](scripts/test_headless_smoke.py).
+- **`docker-publish.yml`**: Builds and publishes multi-architecture images with versioned tags (e.g. `:v1.3.1-ubuntu24.04`) to Docker Hub and GHCR on releases and updates to `main`.
 
 ### Testing Locally with `gh act` (or `act`)
 
