@@ -6,37 +6,11 @@ A modern, comprehensive guide to running **Inkscape MCP** ([`aravindev/inkscape_
 
 ## Overview
 
-[Inkscape MCP](https://github.com/aravindev/inkscape_mcp) connects AI coding assistants directly to Inkscape, providing **8 high-level portmanteau tools** and **over 49 vector operations**. It allows agents to manipulate vector graphics dynamically, run geometry operations, generate complex assets, inspect documents, and even drive a live interactive Inkscape GUI canvas in real time.
+[Inkscape MCP](https://github.com/aravindev/inkscape_mcp) connects AI coding assistants directly to Inkscape, providing **8 high-level portmanteau tools** and **over 49 vector operations**. It allows agents to manipulate vector graphics dynamically, run geometry operations, generate complex assets, inspect documents, and drive a live interactive Inkscape GUI canvas in real time.
 
-### Why Migrate from Legacy Docker Setups?
-
-Previous community setups (such as `Shriinivas/inkmcp`) were **Docker-centric**, requiring an entire desktop Inkscape GUI to run inside a container. That architecture introduced significant friction:
-- **Display Server Fragility**: Required forwarding host X11, Wayland, or WSLg sockets (`/tmp/.X11-unix`), frequently failing across different OS versions and permission levels.
-- **D-Bus Complexities**: Relied on custom forks of `dbus-daemon` and shared IPC sockets across multiple linked containers.
-- **Host Permission Mappings**: Required manual matching of container `UID`/`GID` to host users to prevent permission errors on exported files.
-- **Resource Overhead**: High memory and CPU usage from virtual display drivers and duplicated X11 stacks.
-
-### The Modern Architecture
-
-[`aravindev/inkscape_mcp`](https://github.com/aravindev/inkscape_mcp) shifts the paradigm:
-1. **Native Support (Primary & Recommended)**: Runs directly on your host OS (**Linux**, **macOS**, and **Windows**) via Astral's [`uvx`](https://docs.astral.sh/uv/) or standard Python virtual environments. It communicates natively with your installed Inkscape 1.4+ application over system D-Bus for live GUI canvas interaction and uses direct CLI execution for headless operations—with zero container overhead.
-2. **Headless Docker Support (Secondary / CI / Isolated)**: For headless automation, CI/CD runners, batch graphic conversion, or environments without local Inkscape installations, a streamlined headless container (`ubuntu:24.04`, Inkscape 1.4+, `inkscape-mcp`) is provided. All legacy GUI/X11 socket baggage has been eliminated.
-
-```mermaid
-flowchart TD
-    subgraph Native ["Native Setup (Primary & Recommended)"]
-        A[Inkscape 1.4+ Host Binary] --> C[uvx inkscape-mcp / Python venv]
-        B[MCP Client: Antigravity / Claude / Cursor] -->|stdio JSON-RPC| C
-        C -->|D-Bus / Jeepney / MSYS2| D[Running Inkscape Canvas (Live Mode)]
-        C -->|CLI Actions / inkex| E[Headless Vector Processing]
-    end
-
-    subgraph Docker ["Headless Docker Setup (Alternative / CI)"]
-        F[MCP Client: Stdio / Docker Compose] -->|stdio JSON-RPC| G[Headless Docker Container]
-        G --> H[Inkscape 1.4 CLI & inkscape-mcp]
-        G -.->|Volume Mount| I[/workspace]
-    end
-```
+This guide covers:
+1. **Native Setup (Recommended)**: Run directly on your host OS (**Linux**, **macOS**, and **Windows**) via Astral's `uvx` or standard Python virtual environments with live GUI canvas interaction over D-Bus and headless CLI operations.
+2. **Headless Docker Setup (Alternative / CI)**: Run an isolated, headless container (`ubuntu:24.04`, Inkscape 1.4+, `inkscape-mcp`) communicating over stdio for CI/CD runners, batch graphic conversion, or environments without a local Inkscape installation.
 
 ---
 
@@ -395,59 +369,28 @@ If Live Mode cannot establish a connection on Windows:
 
 ---
 
-## Part 5: CI/CD Pipeline & Local Testing
+## Contributing
 
-This repository includes continuous integration workflows in `.github/workflows/`:
-- **`ci.yml`**:
-  - **`validate`**: Validates configuration syntax (`mcp.json`, `docker-compose.yml`, `docker-bake.hcl`, `.env.example`, workflow YAMLs).
-  - **`docker-test`**: Builds the headless Docker image and executes verification tests against Inkscape (1.4+), python module imports, CLI flags, and headless SVG vector rendering.
-  - **`native-test`**: Multi-OS matrix test across **Ubuntu**, **macOS**, and **Windows** verifying:
-    - Native Inkscape installation (apt/PPA on Linux, Homebrew on macOS, Chocolatey on Windows).
-    - `inkscape-mcp` installation via `pip` and execution via `uvx`.
-    - Headless execution and MCP server initialization via [`scripts/test_headless_smoke.py`](scripts/test_headless_smoke.py).
-- **`docker-publish.yml`**: Builds and publishes multi-architecture images with versioned tags (e.g. `:v1.3.1-ubuntu24.04`) to Docker Hub and GHCR on releases and updates to `main`.
+Contributions, issues, and feature requests are welcome!
 
-### Testing Locally with `gh act` (or `act`)
+### Testing Workflows Locally with `gh act`
 
-To preserve GitHub Actions minutes and verify CI changes before pushing, you can execute the pipeline locally using [`gh act`](https://github.com/nektos/gh-act) (the GitHub CLI extension) or standalone [`act`](https://github.com/nektos/act):
+This repository uses continuous integration workflows to validate configuration syntax, test multi-OS headless installation (`ubuntu-latest`, `macos-latest`, `windows-latest`), and build the container image.
 
-#### 1. Installation
-
-- **Using GitHub CLI extension (`gh act`)**:
-  ```bash
-  gh extension install nektos/gh-act
-  ```
-
-- **Using standalone `act`**:
-  ```bash
-  # Linux / macOS (Homebrew)
-  brew install act
-
-  # Linux (curl)
-  curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
-
-  # Windows (Winget / Chocolatey)
-  winget install nektos.act
-  # or: choco install act-cli
-  ```
-
-#### 2. Running Local CI Jobs
+To preserve GitHub Actions minutes and verify changes before pushing, you can execute the pipeline locally using [`gh act`](https://github.com/nektos/gh-act) (the GitHub CLI extension) or standalone [`act`](https://github.com/nektos/act):
 
 ```bash
 # Validate configurations, bake targets, and workflow schemas (fast, no Docker daemon required):
 gh act -j validate
-# Or with standalone act:
-act -j validate
 
-# Build Docker image and run containerized vector processing verification:
+# Run native multi-OS headless smoke test matrix (Ubuntu, macOS, Windows):
+gh act -j native-test
+
+# Build and verify the headless Docker container:
 gh act -j docker-test
-# Or with standalone act:
-act -j docker-test
 
 # Run entire CI workflow:
 gh act
-# Or with standalone act:
-act
 ```
 
 ---
@@ -458,4 +401,4 @@ act
 - **`inkscape_mcp`** is created by [Aravind EV](https://github.com/aravindev) and licensed under the [MIT License](https://github.com/aravindev/inkscape_mcp/blob/main/LICENSE).
 - Upstream project and issue tracker: [https://github.com/aravindev/inkscape_mcp](https://github.com/aravindev/inkscape_mcp).
 - PyPI package: [`inkscape-mcp`](https://pypi.org/project/inkscape-mcp/).
-- Maintained by [Andreas Sag](https://github.com/andreassag).
+- Maintained by [Andreas Sagen](https://github.com/andreassag).
