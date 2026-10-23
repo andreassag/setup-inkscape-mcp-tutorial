@@ -122,7 +122,10 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           choco install inkscape --no-progress
-          "C:\Program Files\Inkscape\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          # Provide inkscape wrapper without adding Inkscape's internal python.exe to PATH
+          New-Item -ItemType Directory -Path "C:\tools\bin" -Force
+          Set-Content -Path "C:\tools\bin\inkscape.cmd" -Value '@"C:\Program Files\Inkscape\bin\inkscape.exe" %*'
+          "C:\tools\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           "INKSCAPE_BIN=C:\Program Files\Inkscape\bin\inkscape.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Verify Inkscape CLI Installation
@@ -131,6 +134,8 @@ jobs:
 
       - name: Install Astral uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
 
       - name: Test MCP Installation via pip
         run: |
